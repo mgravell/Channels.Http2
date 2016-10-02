@@ -7,7 +7,7 @@ namespace Channels.Http2
     public static class Hpack
     {
         
-        public static string ReadString(ReadableBuffer buffer)
+        public static string ReadString(ref ReadableBuffer buffer)
         {
             int header = buffer.Peek();
             if (header < 0) ThrowEndOfStreamException();

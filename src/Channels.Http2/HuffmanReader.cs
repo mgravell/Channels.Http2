@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Channels.Http2
@@ -7,7 +8,7 @@ namespace Channels.Http2
     {
         public static unsafe string ReadString(ReadableBuffer buffer)
         {
-            int maxChars = buffer.Length / _minCodeLength;
+            int maxChars = (buffer.Length << 3) / _minCodeLength;
             if(maxChars <= 1024)
             {
                 char* c = stackalloc char[maxChars];
@@ -93,8 +94,8 @@ namespace Channels.Http2
             for(int i = 0; i < _codes.Length; i++)
             {
                 var code = _codes[i];
-                int bit = 1 << (_codeLengths[i] - 0);
-                var node = _root;
+                int bit = 1 << (_codeLengths[i] - 1);
+                var node = root;
                 while(bit != 0)
                 {
                     if((code & bit) == 0)
@@ -105,28 +106,44 @@ namespace Channels.Http2
                     {
                         node = node.True?? (node.True = new HuffmanNode());
                     }
+                    bit >>= 1;
                 }
                 node.Value = i;
             }
+#if DEBUG
             // check they make sense
-            var pending = new System.Collections.Generic.Queue<HuffmanNode>();
-            pending.Enqueue(root);
-            while(pending.Count != 0)
-            {
-                var node = pending.Dequeue();
-                // either both or neither nodes must be set
-                if((node.False != null) != (node.True == null))
-                {
-                    throw new InvalidOperationException("The huffman tree is invalid; mismatched sub-tree");
-                }
-                else if(node.False == null && node.Value < 0)
-                {
-                    throw new InvalidOperationException("The huffman tree is invalid; missing value");
-                } 
-            }
+            var stack = new System.Collections.Generic.Stack<string>();
+            Dive(root, stack);
+#endif
+
             _root = root;
         }
-
+#if DEBUG
+        private static void Dive(HuffmanNode node, Stack<string> stack)
+        {
+            // either both or neither nodes must be set
+            if ((node.False == null) != (node.True == null))
+            {
+                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; mismatched sub-tree (Value={node.Value})");
+            }
+            else if (node.False == null && node.Value < 0)
+            {
+                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; missing value");
+            }
+            if(node.True != null)
+            {
+                stack.Push("1");
+                Dive(node.True, stack);
+                stack.Pop();
+            }
+            if (node.False != null)
+            {
+                stack.Push("0");
+                Dive(node.False, stack);
+                stack.Pop();
+            }
+        }
+#endif
     }
 
 }
