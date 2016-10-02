@@ -1,13 +1,14 @@
 ﻿{
   "version": "1.0.0-*",
-
+  "buildOptions": { "allowUnsafe": true },
   "dependencies": {
-    "NETStandard.Library": "1.6.0"
+    "NETStandard.Library": "1.6.0",
+    "Channels": "0.2.0-beta-*",
+    "Channels.Text.Primitives": "0.2.0-beta-*"
   },
 
   "frameworks": {
-    "netstandard1.6": {
-      "imports": "dnxcore50"
-    }
+    "net451": {},
+    "netstandard1.3": {}
   }
 }
