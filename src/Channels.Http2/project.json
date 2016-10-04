@@ -4,7 +4,8 @@
   "dependencies": {
     "NETStandard.Library": "1.6.0",
     "Channels": "0.2.0-beta-*",
-    "Channels.Text.Primitives": "0.2.0-beta-*"
+    "Channels.Text.Primitives": "0.2.0-beta-*",
+    "System.Text.Utf8":  "0.1.0-e*"
   },
 
   "frameworks": {

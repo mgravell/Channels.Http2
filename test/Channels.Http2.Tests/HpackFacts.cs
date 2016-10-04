@@ -62,6 +62,33 @@ namespace Channels.Http2.Tests
                 await buffer.FlushAsync();
             }
         }
+        
+        [Theory]
+        // C.2.1.  Literal Header Field with Indexing
+        [InlineData("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572", "custom-key: custom-header",
+@"[1] (s = 55) custom-key: custom-header
+Table size: 55
+")]
+        public async Task HeaderParse(string hex, string expectedHeader, string expectedTable)
+        {
+            using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory())
+            using (var hpack = new Hpack())
+            {
+                hpack.SetDecoderMaxLength(1024, memoryPool);
+                var channel = channelFactory.CreateChannel();
+                var buffer = channel.Alloc();
+
+                buffer.Write(HexToBytes(hex));
+
+                var readable = buffer.AsReadableBuffer();
+                var header = hpack.ReadHeader(ref readable, memoryPool);
+                Assert.Equal(expectedHeader, header.ToString());
+                Assert.Equal(expectedTable, hpack.GetDecoderTable());
+
+                await buffer.FlushAsync();
+            }
+        }
 
         private static byte[] HexToBytes(string hex)
         {
