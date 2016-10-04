@@ -83,7 +83,6 @@ Table size: 55
             using (var channelFactory = new ChannelFactory())
             using (var hpack = new Hpack())
             {
-                hpack.SetDecoderMaxLength(1024, memoryPool);
                 var channel = channelFactory.CreateChannel();
                 var buffer = channel.Alloc();
 

@@ -47,7 +47,7 @@ namespace Channels.Http2
 
     internal class Hpack : IDisposable
     {
-        private HeaderTable _decoderTable;
+        private HeaderTable _decoderTable = new HeaderTable(4096);
 
         internal string GetDecoderTable() => _decoderTable.ToString();
 
