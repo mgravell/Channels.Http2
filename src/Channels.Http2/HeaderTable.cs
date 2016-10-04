@@ -11,7 +11,7 @@ namespace Channels.Http2
 
         public override string ToString()
         {
-            if (Count == 0) return "Table Size: 0";
+            if (Count == 0) return "empty";
 
             var sb = new StringBuilder();
             int total = 0;

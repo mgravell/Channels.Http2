@@ -62,13 +62,21 @@ namespace Channels.Http2.Tests
                 await buffer.FlushAsync();
             }
         }
-        
+
         [Theory]
         // C.2.1.  Literal Header Field with Indexing
         [InlineData("400a 6375 7374 6f6d 2d6b 6579 0d63 7573 746f 6d2d 6865 6164 6572", "custom-key: custom-header",
 @"[1] (s = 55) custom-key: custom-header
 Table size: 55
 ")]
+        // C.2.2.  Literal Header Field without Indexing
+        [InlineData("040c 2f73 616d 706c 652f 7061 7468", ":path: /sample/path", "empty")]
+
+        // C.2.3.  Literal Header Field Never Indexed
+        [InlineData("1008 7061 7373 776f 7264 0673 6563 7265 74", "password: secret", "empty")]
+
+        // C.2.4.  Indexed Header Field
+        [InlineData("82", ":method: GET", "empty")]
         public async Task HeaderParse(string hex, string expectedHeader, string expectedTable)
         {
             using (var memoryPool = new MemoryPool())
@@ -95,7 +103,7 @@ Table size: 55
             if (hex == null) return null;
             hex = hex.Replace(" ", "").Trim();
             byte[] data = new byte[hex.Length / 2];
-            for(int i = 0; i < data.Length; i++)
+            for (int i = 0; i < data.Length; i++)
             {
                 data[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
             }
