@@ -83,6 +83,21 @@ namespace Channels.Http2
             }
         }
 
+        public static void WriteString(WritableBuffer buffer, string value, bool huffman)
+        {
+            if(huffman)
+            {
+                int len = HuffmanReader.GetByteCount(value);
+                WriteUInt32(buffer, (uint)value.Length, 0, 7);
+                HuffmanReader.Write(buffer, value);
+            }
+            else
+            {
+                WriteUInt32(buffer, (uint)value.Length, 0, 7);
+                buffer.WriteAsciiString(value);
+            }
+        }
+
         private static Header ReadHeader(ref ReadableBuffer buffer, ref HeaderTable headerTable, int header, int prefixBytes)
         {
             var index = ReadUInt32(ref buffer, header, prefixBytes);

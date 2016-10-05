@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 
 namespace Channels.Http2
 {
@@ -527,6 +528,22 @@ namespace Channels.Http2
             30,
 
         };
+
+        internal static void Write(WritableBuffer buffer, string value)
+        {
+            throw new NotImplementedException();
+        }
+
+        internal static int GetByteCount(string value)
+        {
+            int len = 0;
+            foreach(char c in value)
+            {
+                len += _codeLengths[(byte)c];
+            }
+            return (len + 7) / 8;
+        }
+
         static readonly int _minCodeLength = _codeLengths.Min();
     }
 }

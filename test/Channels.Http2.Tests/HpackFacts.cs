@@ -62,13 +62,22 @@ namespace Channels.Http2.Tests
         }
 
         [Theory]
-        [InlineData("0a 6375 7374 6f6d 2d6b 6579", "custom-key")]
-        [InlineData("0d 6375 7374 6f6d 2d68 6561 6465 72", "custom-header")]
-        [InlineData("8c f1e3 c2e5 f23a 6ba0 ab90 f4ff", "www.example.com")]
-        public void BasicStringParse(string hex, string expected)
+        [InlineData("0a 6375 7374 6f6d 2d6b 6579", "custom-key", false)]
+        [InlineData("0d 6375 7374 6f6d 2d68 6561 6465 72", "custom-header", false)]
+        [InlineData("8c f1e3 c2e5 f23a 6ba0 ab90 f4ff", "www.example.com", true)]
+        public async Task BasicStringParse(string hex, string expected, bool huffman)
         {
             var readable = HexToBuffer(ref hex);
             Assert.Equal(expected, Hpack.ReadString(ref readable));
+
+            using (var channelFactory = new ChannelFactory())
+            {
+                var channel = channelFactory.CreateChannel();
+                var wb = channel.Alloc();
+                Hpack.WriteString(wb, expected, huffman);
+                Assert.Equal(hex, ToHex(wb));
+                await wb.FlushAsync();
+            }
         }
 
         [Theory]
