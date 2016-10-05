@@ -57,10 +57,9 @@ namespace Channels.Http2
             }
             else
             {
-                var buffer = _buffer;
                 // shuffle up
                 int headersToKeep = 0, bytesToKeep = 0, totalBytes = newHeaderLength;
-                var span = buffer.Data.Span;
+                var span = _buffer.Data.Span;
                 for (int i = 0; i < Count; i++)
                 {
                     long lengths64 = span.Slice(bytesToKeep).Read<long>();
@@ -76,14 +75,14 @@ namespace Channels.Http2
                 }
                 span.Slice(0, bytesToKeep).CopyTo(span.Slice(newHeaderLength, bytesToKeep));
                 header.WriteTo(span.Slice(0, newHeaderLength));
-                return new HeaderTable(_maxLength, headersToKeep + 1, buffer);
+                return new HeaderTable(_maxLength, headersToKeep + 1, _buffer);
             }
         }
 
         internal string GetHeaderName(uint index) => GetHeader(index).Name;
 
 
-        internal HeaderTable SetMaxLength(int maxLength, IBufferPool pool)
+        internal unsafe HeaderTable SetMaxLength(int maxLength, IBufferPool pool)
         {
             if (checked((int)maxLength) == MaxLength) return this;
 
@@ -93,9 +92,26 @@ namespace Channels.Http2
                 return new HeaderTable(maxLength ^ DefaultMaxLength, 0, null);
             }
 
-            throw new NotImplementedException();
+            int bytesToKeep = 0, headersToKeep = 0, totalBytes = 0;
+            var span = _buffer.Data.Span;
+            for (int i = 0; i < Count; i++)
+            {
+                long lengths64 = span.Slice(bytesToKeep).Read<long>();
+                int* lengths32 = (int*)&lengths64;
+                int itemLen = lengths32[0] + lengths32[1] + 32;
+                totalBytes += itemLen;
+                if (totalBytes > MaxLength)
+                {
+                    break;
+                }
+                bytesToKeep += itemLen;
+                headersToKeep++;
+            }
 
-
+            var newBuffer = pool.Lease(maxLength);
+            _buffer.Data.Span.Slice(0, bytesToKeep).CopyTo(newBuffer.Data.Span.Slice(bytesToKeep));
+            _buffer.Dispose();
+            return new HeaderTable(maxLength ^ DefaultMaxLength, headersToKeep, newBuffer);
         }
 
         public void Dispose()

@@ -196,10 +196,159 @@ Table size: 164
 
         }
 
+        [Fact]
+        public void C51_C52_C53()
+        {
+            using (var memoryPool = new MemoryPool())
+            {
+                var headerTable = new HeaderTable(256);
+                try
+                {
+                    var readable = HexToBuffer(@"
+4803 3330 3258 0770 7269 7661 7465 611d
+4d6f 6e2c 2032 3120 4f63 7420 3230 3133
+2032 303a 3133 3a32 3120 474d 546e 1768
+7474 7073 3a2f 2f77 7777 2e65 7861 6d70
+6c65 2e63 6f6d");
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 302
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:21 GMT
+location: https://www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 63) location: https://www.example.com
+[2] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[3] (s = 52) cache-control: private
+[4] (s = 42) :status: 302
+Table size: 222
+", headerTable.ToString());
+
+                    readable = HexToBuffer("4803 3330 37c1 c0bf");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 307
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:21 GMT
+location: https://www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 42) :status: 307
+[2] (s = 63) location: https://www.example.com
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[4] (s = 52) cache-control: private
+Table size: 222
+", headerTable.ToString());
+
+                    readable = HexToBuffer(@"
+88c1 611d 4d6f 6e2c 2032 3120 4f63 7420
+3230 3133 2032 303a 3133 3a32 3220 474d
+54c0 5a04 677a 6970 7738 666f 6f3d 4153
+444a 4b48 514b 425a 584f 5157 454f 5049
+5541 5851 5745 4f49 553b 206d 6178 2d61
+6765 3d33 3630 303b 2076 6572 7369 6f6e
+3d31");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 200
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:22 GMT
+location: https://www.example.com
+content-encoding: gzip
+set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 98) set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+[2] (s = 52) content-encoding: gzip
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
+Table size: 215
+", headerTable.ToString());
+                }
+                finally
+                {
+                    headerTable.Dispose();
+                }
+            }
+        }
+
+        [Fact]
+        public void C61_C62_C63()
+        {
+            using (var memoryPool = new MemoryPool())
+            {
+                var headerTable = new HeaderTable(256);
+                try
+                {
+                    var readable = HexToBuffer(@"
+4882 6402 5885 aec3 771a 4b61 96d0 7abe
+9410 54d4 44a8 2005 9504 0b81 66e0 82a6
+2d1b ff6e 919d 29ad 1718 63c7 8f0b 97c8
+e9ae 82ae 43d3");
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 302
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:21 GMT
+location: https://www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 63) location: https://www.example.com
+[2] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[3] (s = 52) cache-control: private
+[4] (s = 42) :status: 302
+Table size: 222
+", headerTable.ToString());
+
+                    readable = HexToBuffer("4883 640e ffc1 c0bf");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 307
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:21 GMT
+location: https://www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 42) :status: 307
+[2] (s = 63) location: https://www.example.com
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[4] (s = 52) cache-control: private
+Table size: 222
+", headerTable.ToString());
+
+                    readable = HexToBuffer(@"
+88c1 6196 d07a be94 1054 d444 a820 0595
+040b 8166 e084 a62d 1bff c05a 839b d9ab
+77ad 94e7 821d d7f2 e6c7 b335 dfdf cd5b
+3960 d5af 2708 7f36 72c1 ab27 0fb5 291f
+9587 3160 65c0 03ed 4ee5 b106 3d50 07");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":status: 200
+cache-control: private
+date: Mon, 21 Oct 2013 20:13:22 GMT
+location: https://www.example.com
+content-encoding: gzip
+set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 98) set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+[2] (s = 52) content-encoding: gzip
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
+Table size: 215
+", headerTable.ToString());
+                }
+                finally
+                {
+                    headerTable.Dispose();
+                }
+            }
+        }
+
         private static ReadableBuffer HexToBuffer(string hex)
         {
             if (hex == null) return default(ReadableBuffer);
-            hex = hex.Replace(" ", "").Trim();
+            hex = hex.Replace("\r","").Replace("\n","").Replace(" ", "").Trim();
             byte[] data = new byte[hex.Length / 2];
             for (int i = 0; i < data.Length; i++)
             {
