@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Buffers;
 using System.Text;
+using System.Collections.Generic;
 
 namespace Channels.Http2
 {
@@ -11,6 +12,8 @@ namespace Channels.Http2
         public string Name { get; }
         public string Value { get; }
         public int Length => (Name?.Length ?? 0) + (Value?.Length ?? 0) + 32;
+
+        public bool IsDefault => Name == null && Value == null;
 
         internal Header(string name, string value)
         {
@@ -45,56 +48,42 @@ namespace Channels.Http2
     }
 
 
-    internal class Hpack : IDisposable
+    internal static class Hpack
     {
-        private HeaderTable _decoderTable = new HeaderTable(4096);
-
-        internal string GetDecoderTable() => _decoderTable.ToString();
-
-        public void Dispose()
+        
+        public static Header ReadHeader(ref ReadableBuffer buffer, ref HeaderTable headerTable, IBufferPool memoryPool)
         {
-            _decoderTable.Dispose();
-            _decoderTable = default(HeaderTable);
-        }
-
-        public Header ReadHeader(ref ReadableBuffer buffer, MemoryPool pool)
-        {
-            int header = buffer.Peek();
-            if (header < 0) ThrowEndOfStreamException();
+            int firstByte = buffer.Peek();
+            if (firstByte < 0) ThrowEndOfStreamException();
             buffer = buffer.Slice(1);
-            if ((header & 0x80) != 0)
+            if ((firstByte & 0x80) != 0)
             {
                 // 6.1.  Indexed Header Field Representation
-                return _decoderTable.GetHeader(ReadUInt32(ref buffer, header, 7));
+                return headerTable.GetHeader(ReadUInt32(ref buffer, firstByte, 7));
             }
-            else if ((header & 0x40) != 0)
+            else if ((firstByte & 0x40) != 0)
             {
                 // 6.2.1.  Literal Header Field with Incremental Indexing
-                var result = ReadHeader(ref buffer, header, 6);
-                _decoderTable = _decoderTable.Add(result, pool);
+                var result = ReadHeader(ref buffer, ref headerTable, firstByte, 6);
+                headerTable = headerTable.Add(result, memoryPool);
                 return result;
             }
-            else if ((header & 0x20) != 0)
+            else if ((firstByte & 0x20) != 0)
             {
                 // 6.3. Dynamic Table Size Update
-                var newSize = ReadInt32(ref buffer, header, 5);
-                _decoderTable = _decoderTable.SetMaxLength(newSize, pool);
+                var newSize = ReadInt32(ref buffer, firstByte, 5);
+                headerTable = headerTable.SetMaxLength(newSize, memoryPool);
                 return default(Header);
             }
             else
             {
                 // 6.2.2.Literal Header Field without Indexing
                 // 6.2.3.Literal Header Field Never Indexed
-                return ReadHeader(ref buffer, header, 4);
+                return ReadHeader(ref buffer, ref headerTable, firstByte, 4);
             }
         }
 
-        internal void SetDecoderMaxLength(int maxLength, IBufferPool pool)
-        {
-            _decoderTable = _decoderTable.SetMaxLength(maxLength, pool);
-        }
-
-        private Header ReadHeader(ref ReadableBuffer buffer, int header, int prefixBytes)
+        private static Header ReadHeader(ref ReadableBuffer buffer, ref HeaderTable headerTable, int header, int prefixBytes)
         {
             var index = ReadUInt32(ref buffer, header, prefixBytes);
             string name, value;
@@ -104,7 +93,7 @@ namespace Channels.Http2
             }
             else
             {
-                name = _decoderTable.GetHeaderName(index);
+                name = headerTable.GetHeaderName(index);
             }
             value = ReadString(ref buffer);
             return new Header(name, value);
@@ -188,6 +177,20 @@ namespace Channels.Http2
                     // after that: we've overflown
                     throw new OverflowException();
             }
+        }
+
+        internal static HttpHeader ParseHttpHeader(ref ReadableBuffer buffer, ref HeaderTable headerTable, IBufferPool memoryPool)
+        {
+            var headers = new List<Header>();
+            while (!buffer.IsEmpty)
+            {
+                var header = Hpack.ReadHeader(ref buffer, ref headerTable, memoryPool);
+                if (!header.IsDefault)
+                {
+                    headers.Add(header);
+                }
+            }
+            return new HttpHeader(headers);
         }
     }
 }

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace Channels.Http2.Tests
@@ -27,40 +26,21 @@ namespace Channels.Http2.Tests
         [InlineData("FF9A0A", 5, 1337)]
         // C.1.3
         [InlineData("2A", 8, 42)]
-        public async Task C_1_123(string hex, int n, int expected)
+        public void C_1_123(string hex, int n, int expected)
         {
-            using (var channelFactory = new ChannelFactory())
-            {
-                var channel = channelFactory.CreateChannel();
-                var buffer = channel.Alloc();
+            var readable = HexToBuffer(hex);
+            Assert.Equal((ulong)expected, Hpack.ReadUInt64(ref readable, n));
 
-                buffer.Write(HexToBytes(hex));
-
-                var readable = buffer.AsReadableBuffer();
-                Assert.Equal((ulong)expected, Hpack.ReadUInt64(ref readable, n));
-
-                await buffer.FlushAsync();
-            }
         }
 
         [Theory]
         [InlineData("0a 6375 7374 6f6d 2d6b 6579", "custom-key")]
         [InlineData("0d 6375 7374 6f6d 2d68 6561 6465 72", "custom-header")]
         [InlineData("8c f1e3 c2e5 f23a 6ba0 ab90 f4ff", "www.example.com")]
-        public async Task BasicStringParse(string hex, string expected)
+        public void BasicStringParse(string hex, string expected)
         {
-            using (var channelFactory = new ChannelFactory())
-            {
-                var channel = channelFactory.CreateChannel();
-                var buffer = channel.Alloc();
-
-                buffer.Write(HexToBytes(hex));
-
-                var readable = buffer.AsReadableBuffer();
-                Assert.Equal(expected, Hpack.ReadString(ref readable));
-
-                await buffer.FlushAsync();
-            }
+            var readable = HexToBuffer(hex);
+            Assert.Equal(expected, Hpack.ReadString(ref readable));
         }
 
         [Theory]
@@ -77,36 +57,156 @@ Table size: 55
 
         // C.2.4.  Indexed Header Field
         [InlineData("82", ":method: GET", "empty")]
-        public async Task HeaderParse(string hex, string expectedHeader, string expectedTable)
+        public void HeaderParse(string hex, string expectedHeader, string expectedTable)
         {
             using (var memoryPool = new MemoryPool())
-            using (var channelFactory = new ChannelFactory())
-            using (var hpack = new Hpack())
             {
-                var channel = channelFactory.CreateChannel();
-                var buffer = channel.Alloc();
-
-                buffer.Write(HexToBytes(hex));
-
-                var readable = buffer.AsReadableBuffer();
-                var header = hpack.ReadHeader(ref readable, memoryPool);
-                Assert.Equal(expectedHeader, header.ToString());
-                Assert.Equal(expectedTable, hpack.GetDecoderTable());
-
-                await buffer.FlushAsync();
+                var headerTable = default(HeaderTable);
+                try
+                {
+                    var readable = HexToBuffer(hex);
+                    var header = Hpack.ReadHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(expectedHeader, header.ToString());
+                    Assert.Equal(expectedTable, headerTable.ToString());
+                }
+                finally
+                {
+                    headerTable.Dispose();
+                }
             }
         }
 
-        private static byte[] HexToBytes(string hex)
+        [Fact]
+        public void C31_C32_C33()
         {
-            if (hex == null) return null;
+            using (var memoryPool = new MemoryPool())
+            {
+                var headerTable = default(HeaderTable);
+                try
+                {
+                    var readable = HexToBuffer("8286 8441 0f77 7777 2e65 7861 6d70 6c65 2e63 6f6d");
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 57) :authority: www.example.com
+Table size: 57
+", headerTable.ToString());
+
+                    readable = HexToBuffer("8286 84be 5808 6e6f 2d63 6163 6865");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+cache-control: no-cache
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 53) cache-control: no-cache
+[2] (s = 57) :authority: www.example.com
+Table size: 110
+", headerTable.ToString());
+
+                    readable = HexToBuffer("8287 85bf 400a 6375 7374 6f6d 2d6b 6579 0c63 7573 746f 6d2d 7661 6c75 65");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: https
+:path: /index.html
+:authority: www.example.com
+custom-key: custom-value
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 54) custom-key: custom-value
+[2] (s = 53) cache-control: no-cache
+[3] (s = 57) :authority: www.example.com
+Table size: 164
+", headerTable.ToString());
+                }
+                finally
+                {
+                    headerTable.Dispose();
+                }
+            }
+
+        }
+
+        [Fact]
+        public void C41_C42_C43()
+        {
+            using (var memoryPool = new MemoryPool())
+            {
+                var headerTable = default(HeaderTable);
+                try
+                {
+                    var readable = HexToBuffer("8286 8441 8cf1 e3c2 e5f2 3a6b a0ab 90f4 ff");
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 57) :authority: www.example.com
+Table size: 57
+", headerTable.ToString());
+
+                    readable = HexToBuffer("8286 84be 5886 a8eb 1064 9cbf");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+cache-control: no-cache
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 53) cache-control: no-cache
+[2] (s = 57) :authority: www.example.com
+Table size: 110
+", headerTable.ToString());
+
+                    readable = HexToBuffer("8287 85bf 4088 25a8 49e9 5ba9 7d7f 8925 a849 e95b b8e8 b4bf");
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    Assert.Equal(
+@":method: GET
+:scheme: https
+:path: /index.html
+:authority: www.example.com
+custom-key: custom-value
+", httpHeader.ToString());
+                    Assert.Equal(
+@"[1] (s = 54) custom-key: custom-value
+[2] (s = 53) cache-control: no-cache
+[3] (s = 57) :authority: www.example.com
+Table size: 164
+", headerTable.ToString());
+                }
+                finally
+                {
+                    headerTable.Dispose();
+                }
+            }
+
+        }
+
+        private static ReadableBuffer HexToBuffer(string hex)
+        {
+            if (hex == null) return default(ReadableBuffer);
             hex = hex.Replace(" ", "").Trim();
             byte[] data = new byte[hex.Length / 2];
             for (int i = 0; i < data.Length; i++)
             {
                 data[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
             }
-            return data;
+
+            return ReadableBuffer.Create(data, 0, data.Length);
         }
     }
 }

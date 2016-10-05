@@ -6,7 +6,15 @@ namespace Channels.Http2
 {
     internal partial struct HeaderTable : IDisposable
     {
-        public readonly int MaxLength, Count;
+        public readonly int Count;
+
+        public const int DefaultMaxLength = 4096;
+        private readonly int _maxLength;
+
+        // use XOR here so that a default(HeaderTable) or new HeaderTable()
+        // picks up the right default length
+        public int MaxLength => _maxLength ^ DefaultMaxLength;
+
         private readonly IBuffer _buffer;
 
         public override string ToString()
@@ -25,10 +33,10 @@ namespace Channels.Http2
             return sb.ToString();
         }
 
-        public HeaderTable(int maxLength) : this(maxLength, 0, null) { }
-        private HeaderTable(int maxLength, int count, IBuffer buffer)
+        public HeaderTable(int maxLength) : this(maxLength ^ DefaultMaxLength, 0, null) { }
+        private HeaderTable(int xoredMaxLength, int count, IBuffer buffer)
         {
-            MaxLength = maxLength;
+            _maxLength = xoredMaxLength;
             Count = count;
             _buffer = buffer;
         }
@@ -45,7 +53,7 @@ namespace Channels.Http2
             {
                 var buffer = pool.Lease(MaxLength);
                 header.WriteTo(buffer.Data.Span.Slice(0, newHeaderLength));
-                return new HeaderTable(MaxLength, 1, buffer);
+                return new HeaderTable(_maxLength, 1, buffer);
             }
             else
             {
@@ -55,7 +63,7 @@ namespace Channels.Http2
                 var span = buffer.Data.Span;
                 for (int i = 0; i < Count; i++)
                 {
-                    long lengths64 = span.Read<long>();
+                    long lengths64 = span.Slice(bytesToKeep).Read<long>();
                     int* lengths32 = (int*)&lengths64;
                     int itemLen = lengths32[0] + lengths32[1] + 32;
                     totalBytes += itemLen;
@@ -68,7 +76,7 @@ namespace Channels.Http2
                 }
                 span.Slice(0, bytesToKeep).CopyTo(span.Slice(newHeaderLength, bytesToKeep));
                 header.WriteTo(span.Slice(0, newHeaderLength));
-                return new HeaderTable(MaxLength, headersToKeep + 1, buffer);
+                return new HeaderTable(_maxLength, headersToKeep + 1, buffer);
             }
         }
 
@@ -82,7 +90,7 @@ namespace Channels.Http2
             if (maxLength == 0 || Count == 0)
             {
                 _buffer?.Dispose();
-                return new HeaderTable(maxLength, 0, null);
+                return new HeaderTable(maxLength ^ DefaultMaxLength, 0, null);
             }
 
             throw new NotImplementedException();
@@ -97,13 +105,21 @@ namespace Channels.Http2
 
         internal Header GetHeader(uint index)
         {
-            return index <= _staticTableLength
-                ? GetStaticHeader(index - 1)
+            return index-- <= _staticTableLength
+                ? GetStaticHeader(index)
                 : GetDynamicHeader(index - _staticTableLength);
         }
         private unsafe Header GetDynamicHeader(uint index)
         {
-            if (index >= Count) throw new ArgumentOutOfRangeException(nameof(index));
+            if (index >= Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            if(index == 2)
+            {
+                Console.WriteLine("Hi");
+            }
 
             var span = _buffer.Data.Span;
             long lengths64 = 0;
