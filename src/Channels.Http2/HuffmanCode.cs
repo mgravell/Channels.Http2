@@ -87,7 +87,7 @@ namespace Channels.Http2
             public bool IsLeaf => True == null;
         }
 
-        internal static void Write(WritableBuffer buffer, uint bytesToWrite, string value)
+        internal static void Write(WritableBuffer buffer, string value)
         {
             var span = default(Span<byte>);
             int unusedBytesInSpan = 0, dirtyBytes = 0, index = -1;
@@ -210,12 +210,12 @@ namespace Channels.Http2
             bitsLeftInCurrentByte = 8;
         }
 
-        internal static uint GetByteCount(string value)
+        internal static int GetByteCount(string value)
         {
-            uint len = 0;
+            int len = 0;
             foreach (char c in value)
             {
-                len += (uint)_codeLengths[(byte)c];
+                len += _codeLengths[(byte)c];
             }
             return (len + 7) / 8;
         }

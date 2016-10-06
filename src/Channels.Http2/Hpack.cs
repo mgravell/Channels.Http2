@@ -85,11 +85,11 @@ namespace Channels.Http2
 
         public static void WriteString(WritableBuffer buffer, string value)
         {
-            uint len = HuffmanCode.GetByteCount(value);
+            var len = HuffmanCode.GetByteCount(value);
             if(len < value.Length)
             {
-                WriteUInt32(buffer, len, 0x80, 7);
-                HuffmanCode.Write(buffer, len, value);
+                WriteUInt32(buffer, (uint)len, 0x80, 7);
+                HuffmanCode.Write(buffer, value);
             }
             else
             {
@@ -101,9 +101,9 @@ namespace Channels.Http2
         {
             if(huffman)
             {
-                uint len = HuffmanCode.GetByteCount(value);
-                WriteUInt32(buffer, len, 0x80, 7);
-                HuffmanCode.Write(buffer, len, value);
+                var len = HuffmanCode.GetByteCount(value);
+                WriteUInt32(buffer, (uint)len, 0x80, 7);
+                HuffmanCode.Write(buffer, value);
             }
             else
             {
