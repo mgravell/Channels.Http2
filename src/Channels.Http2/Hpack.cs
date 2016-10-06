@@ -226,37 +226,32 @@ namespace Channels.Http2
         public static void WriteUInt32(WritableBuffer buffer, uint value, byte preamble, int n)
             => WriteUInt64(buffer, value, preamble, n);
 
-        public static void WriteUInt64(WritableBuffer buffer, ulong value, byte preamble, int n)
+        public static unsafe void WriteUInt64(WritableBuffer buffer, ulong value, byte preamble, int n)
         {
             if (n < 0 || n > 8) throw new ArgumentOutOfRangeException(nameof(n));
             var mask = ~0UL << n;
-            if((value & mask) == 0)
+            byte* scratch = stackalloc byte[16], writeHead = scratch;
+            if ((value & mask) == 0)
             {
                 // value fits inside the single byte, yay!
                 preamble |= (byte)value;
-                buffer.Ensure(1);
-                var span = buffer.Memory.Span;
-                span[0] = preamble;
-                buffer.Advance(1);
+                *writeHead++ = preamble;
             }
             else
             {
                 
-                buffer.Ensure(10); // 64=9*7+1
-                var span = buffer.Memory.Span;
                 preamble |= (byte)(~mask);
-                span[0] = preamble;
+                *writeHead++ = preamble;
                 value -= ~mask;
-                int index = 1;
                 const ulong MoreThanSevenBits = ~(127UL);
                 while((value & MoreThanSevenBits) != 0)
                 {
-                    span[index++] = (byte)(0x80 | (value & 0x7F));
+                    *writeHead++ = (byte)(0x80 | (value & 0x7F));
                     value >>= 7;
                 }
-                span[index] = (byte)value;
-                buffer.Advance(index + 1);
+                *writeHead++ = (byte)value;
             }
+            buffer.Write(new Span<byte>(scratch, (int)(writeHead - scratch)));
         }
     }
 }

@@ -197,7 +197,7 @@ namespace Channels.Http2
                 buffer.Write(new Span<byte>(scratch, dirtyBytes));
             }
         }
-
+        
         internal static int GetByteCount(string value)
         {
             int len = 0;
