@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Channels.Http2
@@ -107,9 +108,9 @@ gzip, deflate");
         {
             return new Header(
                 name: _staticHeaderNames[index],
-                value: (index < _staticHeaderValues.Length ? _staticHeaderValues[index] : "")
+                value: (index < _staticHeaderValues.Length ? _staticHeaderValues[index] : ""),
+                options: HeaderOptions.IndexExistingValue
             );
         }
-
     }
 }

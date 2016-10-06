@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using Xunit;
@@ -68,13 +67,15 @@ namespace Channels.Http2.Tests
         public async Task BasicStringParse(string hex, string expected, bool huffman)
         {
             var readable = HexToBuffer(ref hex);
-            Assert.Equal(expected, Hpack.ReadString(ref readable));
+            bool isCompressed;
+            Assert.Equal(expected, Hpack.ReadString(ref readable, out isCompressed));
+            Assert.Equal(huffman, isCompressed);
 
             using (var channelFactory = new ChannelFactory())
             {
                 var channel = channelFactory.CreateChannel();
                 var wb = channel.Alloc();
-                Hpack.WriteString(wb, expected, huffman);
+                Hpack.WriteNameString(wb, expected, huffman ? HeaderOptions.NameCompressionOn : HeaderOptions.NameCompressionOff);
                 Assert.Equal(hex, ToHex(wb));
                 await wb.FlushAsync();
             }
@@ -94,36 +95,49 @@ Table size: 55
 
         // C.2.4.  Indexed Header Field
         [InlineData("82", ":method: GET", "empty")]
-        public void HeaderParse(string hex, string expectedHeader, string expectedTable)
+        public async Task HeaderParse(string hex, string expectedHeader, string expectedTable)
         {
             using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory(memoryPool))
             {
-                var headerTable = default(HeaderTable);
+                var readerTable = default(HeaderTable);
+                var writerTable = default(HeaderTable);
                 try
                 {
                     var readable = HexToBuffer(ref hex);
-                    var header = Hpack.ReadHeader(ref readable, ref headerTable, memoryPool);
+                    var header = Hpack.ReadHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(expectedHeader, header.ToString());
-                    Assert.Equal(expectedTable, headerTable.ToString());
+                    Assert.Equal(expectedTable, readerTable.ToString());
+
+                    var channel = channelFactory.CreateChannel();
+
+                    var wb = channel.Alloc();
+                    Hpack.WriteHeader(wb, header, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
                 }
                 finally
                 {
-                    headerTable.Dispose();
+                    readerTable.Dispose();
+                    writerTable.Dispose();
                 }
             }
         }
 
         [Fact]
-        public void C31_C32_C33()
+        public async Task C31_C32_C33()
         {
             using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory(memoryPool))
             {
-                var headerTable = default(HeaderTable);
+                var channel = channelFactory.CreateChannel();
+                var readerTable = default(HeaderTable);
+                var writerTable = default(HeaderTable);
                 try
                 {
                     var hex = "8286 8441 0f77 7777 2e65 7861 6d70 6c65 2e63 6f6d";
                     var readable = HexToBuffer(ref hex);
-                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: http
@@ -133,11 +147,21 @@ Table size: 55
                     Assert.Equal(
 @"[1] (s = 57) :authority: www.example.com
 Table size: 57
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    var wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 57) :authority: www.example.com
+Table size: 57
+", writerTable.ToString());
 
                     hex = "8286 84be 5808 6e6f 2d63 6163 6865";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: http
@@ -149,11 +173,24 @@ cache-control: no-cache
 @"[1] (s = 53) cache-control: no-cache
 [2] (s = 57) :authority: www.example.com
 Table size: 110
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 53) cache-control: no-cache
+[2] (s = 57) :authority: www.example.com
+Table size: 110
+", writerTable.ToString());
+
+
 
                     hex = "8287 85bf 400a 6375 7374 6f6d 2d6b 6579 0c63 7573 746f 6d2d 7661 6c75 65";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: https
@@ -166,27 +203,44 @@ custom-key: custom-value
 [2] (s = 53) cache-control: no-cache
 [3] (s = 57) :authority: www.example.com
 Table size: 164
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 54) custom-key: custom-value
+[2] (s = 53) cache-control: no-cache
+[3] (s = 57) :authority: www.example.com
+Table size: 164
+", writerTable.ToString());
+
                 }
                 finally
                 {
-                    headerTable.Dispose();
+                    readerTable.Dispose();
+                    writerTable.Dispose();
                 }
             }
 
         }
 
         [Fact]
-        public void C41_C42_C43()
+        public async Task C41_C42_C43()
         {
             using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory(memoryPool))
             {
-                var headerTable = default(HeaderTable);
+                var channel = channelFactory.CreateChannel();
+                var readerTable = default(HeaderTable);
+                var writerTable = default(HeaderTable);
                 try
                 {
                     var hex = "8286 8441 8cf1 e3c2 e5f2 3a6b a0ab 90f4 ff";
                     var readable = HexToBuffer(ref hex);
-                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: http
@@ -196,11 +250,19 @@ Table size: 164
                     Assert.Equal(
 @"[1] (s = 57) :authority: www.example.com
 Table size: 57
-", headerTable.ToString());
+", readerTable.ToString());
+                    var wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+                    Assert.Equal(
+@"[1] (s = 57) :authority: www.example.com
+Table size: 57
+", writerTable.ToString());
 
                     hex = "8286 84be 5886 a8eb 1064 9cbf";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: http
@@ -212,11 +274,22 @@ cache-control: no-cache
 @"[1] (s = 53) cache-control: no-cache
 [2] (s = 57) :authority: www.example.com
 Table size: 110
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 53) cache-control: no-cache
+[2] (s = 57) :authority: www.example.com
+Table size: 110
+", writerTable.ToString());
 
                     hex = "8287 85bf 4088 25a8 49e9 5ba9 7d7f 8925 a849 e95b b8e8 b4bf";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":method: GET
 :scheme: https
@@ -229,22 +302,38 @@ custom-key: custom-value
 [2] (s = 53) cache-control: no-cache
 [3] (s = 57) :authority: www.example.com
 Table size: 164
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 54) custom-key: custom-value
+[2] (s = 53) cache-control: no-cache
+[3] (s = 57) :authority: www.example.com
+Table size: 164
+", writerTable.ToString());
                 }
                 finally
                 {
-                    headerTable.Dispose();
+                    readerTable.Dispose();
+                    writerTable.Dispose();
                 }
             }
 
         }
 
         [Fact]
-        public void C51_C52_C53()
+        public async Task C51_C52_C53()
         {
             using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory(memoryPool))
             {
-                var headerTable = new HeaderTable(256);
+                var channel = channelFactory.CreateChannel();
+                var readerTable = new HeaderTable(256);
+                var writerTable = new HeaderTable(256);
                 try
                 {
                     var hex = @"
@@ -254,7 +343,7 @@ Table size: 164
 7474 7073 3a2f 2f77 7777 2e65 7861 6d70
 6c65 2e63 6f6d";
                     var readable = HexToBuffer(ref hex);
-                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 302
 cache-control: private
@@ -267,11 +356,24 @@ location: https://www.example.com
 [3] (s = 52) cache-control: private
 [4] (s = 42) :status: 302
 Table size: 222
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    var wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 63) location: https://www.example.com
+[2] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[3] (s = 52) cache-control: private
+[4] (s = 42) :status: 302
+Table size: 222
+", writerTable.ToString());
 
                     hex = "4803 3330 37c1 c0bf";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 307
 cache-control: private
@@ -284,7 +386,20 @@ location: https://www.example.com
 [3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
 [4] (s = 52) cache-control: private
 Table size: 222
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 42) :status: 307
+[2] (s = 63) location: https://www.example.com
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[4] (s = 52) cache-control: private
+Table size: 222
+", writerTable.ToString());
 
                     hex = @"
 88c1 611d 4d6f 6e2c 2032 3120 4f63 7420
@@ -295,7 +410,7 @@ Table size: 222
 6765 3d33 3630 303b 2076 6572 7369 6f6e
 3d31";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 200
 cache-control: private
@@ -309,21 +424,37 @@ set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
 [2] (s = 52) content-encoding: gzip
 [3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
 Table size: 215
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 98) set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+[2] (s = 52) content-encoding: gzip
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
+Table size: 215
+", writerTable.ToString());
                 }
                 finally
                 {
-                    headerTable.Dispose();
+                    readerTable.Dispose();
+                    writerTable.Dispose();
                 }
             }
         }
 
         [Fact]
-        public void C61_C62_C63()
+        public async Task C61_C62_C63()
         {
             using (var memoryPool = new MemoryPool())
+            using (var channelFactory = new ChannelFactory(memoryPool))
             {
-                var headerTable = new HeaderTable(256);
+                var channel = channelFactory.CreateChannel();
+                var readerTable = new HeaderTable(256);
+                var writerTable = new HeaderTable(256);
                 try
                 {
                     var hex = @"
@@ -332,7 +463,7 @@ Table size: 215
 2d1b ff6e 919d 29ad 1718 63c7 8f0b 97c8
 e9ae 82ae 43d3";
                     var readable = HexToBuffer(ref hex);
-                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    var httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 302
 cache-control: private
@@ -345,11 +476,24 @@ location: https://www.example.com
 [3] (s = 52) cache-control: private
 [4] (s = 42) :status: 302
 Table size: 222
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    var wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 63) location: https://www.example.com
+[2] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[3] (s = 52) cache-control: private
+[4] (s = 42) :status: 302
+Table size: 222
+", writerTable.ToString());
 
                     hex = "4883 640e ffc1 c0bf";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 307
 cache-control: private
@@ -362,7 +506,20 @@ location: https://www.example.com
 [3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
 [4] (s = 52) cache-control: private
 Table size: 222
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 42) :status: 307
+[2] (s = 63) location: https://www.example.com
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:21 GMT
+[4] (s = 52) cache-control: private
+Table size: 222
+", writerTable.ToString());
 
                     hex = @"
 88c1 6196 d07a be94 1054 d444 a820 0595
@@ -371,7 +528,7 @@ Table size: 222
 3960 d5af 2708 7f36 72c1 ab27 0fb5 291f
 9587 3160 65c0 03ed 4ee5 b106 3d50 07";
                     readable = HexToBuffer(ref hex);
-                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref headerTable, memoryPool);
+                    httpHeader = Hpack.ParseHttpHeader(ref readable, ref readerTable, memoryPool);
                     Assert.Equal(
 @":status: 200
 cache-control: private
@@ -385,11 +542,24 @@ set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
 [2] (s = 52) content-encoding: gzip
 [3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
 Table size: 215
-", headerTable.ToString());
+", readerTable.ToString());
+
+                    wb = channel.Alloc();
+                    Hpack.WriteHttpHeader(wb, httpHeader, ref writerTable, memoryPool);
+                    Assert.Equal(hex, ToHex(wb));
+                    await wb.FlushAsync();
+
+                    Assert.Equal(
+@"[1] (s = 98) set-cookie: foo=ASDJKHQKBZXOQWEOPIUAXQWEOIU; max-age=3600; version=1
+[2] (s = 52) content-encoding: gzip
+[3] (s = 65) date: Mon, 21 Oct 2013 20:13:22 GMT
+Table size: 215
+", writerTable.ToString());
                 }
                 finally
                 {
-                    headerTable.Dispose();
+                    readerTable.Dispose();
+                    writerTable.Dispose();
                 }
             }
         }

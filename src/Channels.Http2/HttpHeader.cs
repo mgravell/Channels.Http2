@@ -1,12 +1,15 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 
 namespace Channels.Http2
 {
-    public struct HttpHeader
+    public struct HttpHeader : IEnumerable<Header>
     {
         private readonly List<Header> _headers;
+
+        public List<Header>.Enumerator GetEnumerator() => _headers.GetEnumerator();
         public HttpHeader(List<Header> headers)
         {
             _headers = headers;
@@ -22,5 +25,11 @@ namespace Channels.Http2
             }
             return sb.ToString();
         }
+
+        IEnumerator<Header> IEnumerable<Header>.GetEnumerator()
+            => ((IEnumerable<Header>)_headers).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator()
+            => ((IEnumerable)_headers).GetEnumerator();
     }
 }

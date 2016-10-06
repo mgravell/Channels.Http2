@@ -66,7 +66,7 @@ namespace Channels.Http2
                     int* lengths32 = (int*)&lengths64;
                     int itemLen = lengths32[0] + lengths32[1] + 32;
                     totalBytes += itemLen;
-                    if(totalBytes > MaxLength)
+                    if (totalBytes > MaxLength)
                     {
                         break;
                     }
@@ -119,11 +119,11 @@ namespace Channels.Http2
             _buffer?.Dispose();
         }
 
-        internal Header GetHeader(uint index)
+        internal Header GetHeader(uint key)
         {
-            return index-- <= _staticTableLength
-                ? GetStaticHeader(index)
-                : GetDynamicHeader(index - _staticTableLength);
+            return key-- <= _staticTableLength
+                ? GetStaticHeader(key)
+                : GetDynamicHeader(key - _staticTableLength);
         }
         private unsafe Header GetDynamicHeader(uint index)
         {
@@ -146,8 +146,102 @@ namespace Channels.Http2
             int nameLen = lengths32[0], valueLen = lengths32[1];
             return new Header(
                 name: nameLen == 0 ? "" : new Utf8String(span.Slice(32, nameLen)).ToString(),
-                value: valueLen == 0 ? "" : new Utf8String(span.Slice(32 + nameLen, valueLen)).ToString()
+                value: valueLen == 0 ? "" : new Utf8String(span.Slice(32 + nameLen, valueLen)).ToString(),
+                options: HeaderOptions.IndexExistingValue
             );
+
+        }
+        internal unsafe uint GetKey(string name)
+        {
+            int staticIndex = Array.IndexOf(_staticHeaderNames, name);
+            if (staticIndex >= 0)
+            {
+                return (uint)(staticIndex + 1);
+            }
+            if (Count != 0)
+            {
+                int nameLength = name.Length, nameHashCode = name.GetHashCode();
+                var span = _buffer.Data.Span;
+                long lengths64 = 0;
+                long hashcodes64 = 0;
+                int* lengths32 = (int*)&lengths64;
+                int* hashcodes32 = (int*)&hashcodes64;
+                for (uint i = 0; i < Count; i++)
+                {
+                    lengths64 = span.Read<long>();
+
+                    int nameLen = lengths32[0];
+
+                    if (nameLen == nameLength)
+                    {
+                        hashcodes64 = span.Slice(8).Read<long>();
+                        if (hashcodes32[0] == nameHashCode
+                            && Equals(span.Slice(32, nameLen), name))
+                        {
+                            return _staticTableLength + i + 1;
+                        }
+                    }
+
+                    // next!
+                    span = span.Slice(nameLen + lengths32[1] + 32);
+                }
+            }
+
+
+            return 0;
+        }
+
+        internal unsafe uint GetKey(string name, string value)
+        {
+            int staticIndex = value.Length == 0 ? -1 : Array.IndexOf(_staticHeaderValues, value);
+            if (staticIndex >= 0 && _staticHeaderNames[staticIndex] == name)
+            {
+                return (uint)(staticIndex + 1);
+            }
+            if (Count != 0)
+            {
+                int nameLength = name.Length, nameHashCode = name.GetHashCode(),
+                    valueLength = value.Length, valueHashCode = value.GetHashCode();
+                var span = _buffer.Data.Span;
+                long lengths64 = 0, hashcodes64 = 0;
+                int* lengths32 = (int*)&lengths64;
+                int* hascodes32 = (int*)&hashcodes64;
+                for (uint i = 0; i < Count; i++)
+                {
+                    lengths64 = span.Read<long>();
+                    int nameLen = lengths32[0], valueLen = lengths32[1];
+
+                    if (nameLen == nameLength && valueLen == valueLength)
+                    {
+                        hashcodes64 = span.Slice(8).Read<long>();
+                        if (hascodes32[0] == nameHashCode
+                         && hascodes32[1] == valueHashCode
+                         && Equals(span.Slice(32, nameLen), name)
+                         && Equals(span.Slice(32 + nameLen, valueLen), value))
+                        {
+                            return _staticTableLength + i + 1;
+                        }
+                    }
+                    // next!
+                    span = span.Slice(nameLen + lengths32[1] + 32);
+                }
+            }
+
+
+            return 0;
+        }
+
+        private static bool Equals(Span<byte> slice, string value)
+        {
+            int len = value.Length;
+            for (int i = 0; i < len; i++)
+            {
+                if (slice[i] != (byte)value[i])
+                {
+                    return false;
+                }
+            }
+            return true;
 
         }
     }
