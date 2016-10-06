@@ -132,11 +132,6 @@ namespace Channels.Http2
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
 
-            if(index == 2)
-            {
-                Console.WriteLine("Hi");
-            }
-
             var span = _buffer.Data.Span;
             long lengths64 = 0;
             int* lengths32 = (int*)&lengths64;

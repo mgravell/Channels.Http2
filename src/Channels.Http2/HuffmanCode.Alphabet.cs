@@ -1,12 +1,15 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Channels.Http2
 {
-    public partial struct HuffmanReader
+    public partial struct HuffmanCode
     {
+        static readonly HuffmanNode _root;
+
         // see: Appendix B
-        static readonly int[] _codes =
+        static readonly uint[] _codes =
         {
 0x1ff8
 ,0x7fffd8
@@ -529,21 +532,63 @@ namespace Channels.Http2
 
         };
 
-        internal static void Write(WritableBuffer buffer, string value)
-        {
-            throw new NotImplementedException();
-        }
-
-        internal static int GetByteCount(string value)
-        {
-            int len = 0;
-            foreach(char c in value)
-            {
-                len += _codeLengths[(byte)c];
-            }
-            return (len + 7) / 8;
-        }
-
         static readonly int _minCodeLength = _codeLengths.Min();
+
+        static HuffmanCode()
+        {
+            var root = new HuffmanNode();
+            for (int i = 0; i < _codes.Length; i++)
+            {
+                var code = _codes[i];
+                int bit = 1 << ((int)_codeLengths[i] - 1);
+                var node = root;
+                while (bit != 0)
+                {
+                    if ((code & bit) == 0)
+                    {
+                        node = node.False ?? (node.False = new HuffmanNode());
+                    }
+                    else
+                    {
+                        node = node.True ?? (node.True = new HuffmanNode());
+                    }
+                    bit >>= 1;
+                }
+                node.Value = i;
+            }
+#if DEBUG
+            // check they make sense
+            var stack = new Stack<string>();
+            Dive(root, stack);
+#endif
+
+            _root = root;
+        }
+#if DEBUG
+        private static void Dive(HuffmanNode node, Stack<string> stack)
+        {
+            // either both or neither nodes must be set
+            if ((node.False == null) != (node.True == null))
+            {
+                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; mismatched sub-tree (Value={node.Value})");
+            }
+            else if (node.False == null && node.Value < 0)
+            {
+                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; missing value");
+            }
+            if (node.True != null)
+            {
+                stack.Push("1");
+                Dive(node.True, stack);
+                stack.Pop();
+            }
+            if (node.False != null)
+            {
+                stack.Push("0");
+                Dive(node.False, stack);
+                stack.Pop();
+            }
+        }
+#endif
     }
 }

@@ -83,13 +83,27 @@ namespace Channels.Http2
             }
         }
 
+        public static void WriteString(WritableBuffer buffer, string value)
+        {
+            uint len = HuffmanCode.GetByteCount(value);
+            if(len < value.Length)
+            {
+                WriteUInt32(buffer, len, 0x80, 7);
+                HuffmanCode.Write(buffer, len, value);
+            }
+            else
+            {
+                WriteUInt32(buffer, (uint)value.Length, 0, 7);
+                buffer.WriteAsciiString(value);
+            }
+        }
         public static void WriteString(WritableBuffer buffer, string value, bool huffman)
         {
             if(huffman)
             {
-                int len = HuffmanReader.GetByteCount(value);
-                WriteUInt32(buffer, (uint)value.Length, 0, 7);
-                HuffmanReader.Write(buffer, value);
+                uint len = HuffmanCode.GetByteCount(value);
+                WriteUInt32(buffer, len, 0x80, 7);
+                HuffmanCode.Write(buffer, len, value);
             }
             else
             {
@@ -125,7 +139,7 @@ namespace Channels.Http2
             string result;
             if (huffman)
             {
-                result = HuffmanReader.ReadString(buffer.Slice(0, len));
+                result = HuffmanCode.ReadString(buffer.Slice(0, len));
             }
             else
             {
