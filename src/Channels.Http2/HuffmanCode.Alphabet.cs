@@ -528,9 +528,9 @@
 
         // What is this? k; start with the first 5 bits, because all the codes require at least  5
         // bits; each set of numbers is a False/True pair. So jump to the first 0-31 via the 5 bits;
-        // if the numbers are identical and negative, you have a 5-bit leaf, so: negate and return.
+        // if the numbers are identical and non-positive, you have a 5-bit leaf, so: negate and return.
         // otherwise, keep reading additional bits; for a 0 take the left half of the pair; for 1, the right.
-        // if the value is -ve, you have a leaf; negate and return. Otherwise, the value is the index of the
+        // if the value is non-positive, you have a leaf; negate and return. Otherwise, the value is the index of the
         // next **pair**, so double it, use it as your position, and keep going.
 
         // how was it generated? see the commented out garbage
