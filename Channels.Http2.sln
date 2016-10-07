@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{8BB2217D-0F2D-49D1-97BC-3654ED321F3B}") = "Channels.Http2.Tests", "test\Channels.Http2.Tests\Channels.Http2.Tests.xproj", "{7D8173FB-E774-4058-8008-F79ACC817B25}"
 EndProject
+Project("{8BB2217D-0F2D-49D1-97BC-3654ED321F3B}") = "DemoServer", "DemoServer\DemoServer.xproj", "{4C2C939A-402B-4F4A-946F-A23F21B3EA52}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,6 +30,10 @@ Global
 		{7D8173FB-E774-4058-8008-F79ACC817B25}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7D8173FB-E774-4058-8008-F79ACC817B25}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7D8173FB-E774-4058-8008-F79ACC817B25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C2C939A-402B-4F4A-946F-A23F21B3EA52}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C2C939A-402B-4F4A-946F-A23F21B3EA52}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C2C939A-402B-4F4A-946F-A23F21B3EA52}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C2C939A-402B-4F4A-946F-A23F21B3EA52}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
