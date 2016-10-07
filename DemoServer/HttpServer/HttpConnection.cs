@@ -6,6 +6,9 @@ using System.Text.Formatting;
 using System.Threading.Tasks;
 using Channels.Text.Primitives;
 using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.Extensions.Primitives;
+using System.Binary;
+using DemoServer.HttpServer;
 
 namespace Channels.Samples.Http
 {
@@ -14,11 +17,14 @@ namespace Channels.Samples.Http
         private static readonly byte[] _http11Bytes = Encoding.UTF8.GetBytes("HTTP/1.1 ");
         private static readonly byte[] _chunkedEndBytes = Encoding.UTF8.GetBytes("0\r\n\r\n");
         private static readonly byte[] _endChunkBytes = Encoding.ASCII.GetBytes("\r\n");
+        private static readonly byte[] _http2SwitchBytes = Encoding.UTF8.GetBytes("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n");
 
         private readonly IReadableChannel _input;
         private readonly IWritableChannel _output;
         private readonly IHttpApplication<TContext> _application;
         private readonly WritableChannelFormatter _outputFormatter;
+        private bool _isHttp2;
+        private HttpSettings _settings;
 
         public RequestHeaderDictionary RequestHeaders => _parser.RequestHeaders;
         public ResponseHeaderDictionary ResponseHeaders { get; } = new ResponseHeaderDictionary();
@@ -74,9 +80,11 @@ namespace Channels.Samples.Http
                         // We're done with this connection
                         return;
                     }
-
+                    Console.WriteLine($"Read: {buffer.Length} bytes");
+                    Console.WriteLine(BitConverter.ToString(buffer.ToArray()));
+                    Console.WriteLine(buffer.GetAsciiString());
                     var result = _parser.ParseRequest(ref buffer);
-
+                    Console.WriteLine($"Result: {result}");
                     switch (result)
                     {
                         case HttpRequestParser.ParseResult.Incomplete:
@@ -196,14 +204,95 @@ namespace Channels.Samples.Http
             }
 
             HasStarted = true;
+            Console.WriteLine("Upgrade: " + RequestHeaders["Upgrade"]);
+            if (!_isHttp2 && RequestHeaders.ContainsKey("Upgrade") && TryUpgradeToHttp2())
+            {
+                _outputFormatter.Write(_http2SwitchBytes);
+                _isHttp2 = true;
 
-            _outputFormatter.Write(_http11Bytes);
-            var status = ReasonPhrases.ToStatusBytes(StatusCode);
-            _outputFormatter.Write(status);
+                /*
+                 The first HTTP/2 frame sent by the server MUST be a server connection
+                 preface (Section 3.5) consisting of a SETTINGS frame (Section 6.5).
+                */
+                throw new NotImplementedException();
+            }
 
-            _autoChunk = !HasContentLength && !HasTransferEncoding && KeepAlive;
+            if (_isHttp2)
+            {
+                throw new NotImplementedException();
+            }
+            else
+            {
+                _outputFormatter.Write(_http11Bytes);
+                var status = ReasonPhrases.ToStatusBytes(StatusCode);
+                _outputFormatter.Write(status);
 
-            ResponseHeaders.CopyTo(_autoChunk, _outputFormatter);
+                _autoChunk = !HasContentLength && !HasTransferEncoding && KeepAlive;
+
+                ResponseHeaders.CopyTo(_autoChunk, _outputFormatter);
+            }
+        }
+
+        private bool TryUpgradeToHttp2()
+        {
+            try
+            {
+                if (RequestHeaders.ContainsKey("HTTP2-Settings") && RequestHeaders.ContainsKey("Connection"))
+                {
+                    var connection = RequestHeaders["Connection"];
+                    if (ContainsToken(connection, "Upgrade") && ContainsToken(connection, "HTTP2-Settings")
+                        && ContainsToken(RequestHeaders["Upgrade"], "htc"))
+                    {
+                        var settings = RequestHeaders["HTTP2-Settings"];
+                        if (settings.Count == 1)
+                        {
+                            var base64 = settings[0];
+                            switch (base64.Length % 4)
+                            {
+                                case 0: break; // do nothing
+                                case 2: base64 += "=="; break;
+                                case 3: base64 += "="; break;
+                                default: return false;
+                            }
+                            var payload = Convert.FromBase64String(base64);
+                            ParseSettings(payload);
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ParseSettings(Span<byte> settings)
+        {
+            if ((settings.Length % 6) != 0) throw new ArgumentException(nameof(settings));
+            while(settings.Length != 0)
+            {
+                var id = settings.ReadBigEndian<SettingsParameter>();
+                settings = settings.Slice(2);
+                var value = settings.ReadBigEndian<uint>();
+                settings = settings.Slice(4);
+                _settings[id] = value;
+            }
+            Console.WriteLine(_settings.ToString());
+        }
+
+        private bool ContainsToken(StringValues headerValue, string token)
+        {
+            foreach (var value in headerValue)
+            {
+                if (string.Equals(token, StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void WriteEndResponse()
