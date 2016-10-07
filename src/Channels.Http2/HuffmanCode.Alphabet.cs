@@ -1,13 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace Channels.Http2
+﻿namespace Channels.Http2
 {
     public partial struct HuffmanCode
     {
-        static readonly HuffmanNode _root;
-
         // see: Appendix B
         static readonly uint[] _codes =
         {
@@ -532,63 +526,261 @@ namespace Channels.Http2
 
         };
 
-        static readonly int _minCodeLength = _codeLengths.Min();
+        // What is this? k; start with the first 5 bits, because all the codes require at least  5
+        // bits; each set of numbers is a False/True pair. So jump to the first 0-31 via the 5 bits;
+        // if the numbers are identical and negative, you have a 5-bit leaf, so: negate and return.
+        // otherwise, keep reading additional bits; for a 0 take the left half of the pair; for 1, the right.
+        // if the value is -ve, you have a leaf; negate and return. Otherwise, the value is the index of the
+        // next **pair**, so double it, use it as your position, and keep going.
 
-        static HuffmanCode()
-        {
-            var root = new HuffmanNode();
-            for (int i = 0; i < _codes.Length; i++)
-            {
-                var code = _codes[i];
-                int bit = 1 << ((int)_codeLengths[i] - 1);
-                var node = root;
-                while (bit != 0)
-                {
-                    if ((code & bit) == 0)
-                    {
-                        node = node.False ?? (node.False = new HuffmanNode());
-                    }
-                    else
-                    {
-                        node = node.True ?? (node.True = new HuffmanNode());
-                    }
-                    bit >>= 1;
-                }
-                node.Value = i;
-            }
-#if DEBUG
-            // check they make sense
-            var stack = new Stack<string>();
-            Dive(root, stack);
-#endif
+        // how was it generated? see the commented out garbage
+        static readonly short[] _linearizedTree = {
+            -48, -48, -49, -49, -50, -50, -97, -97, -99, -99, -101, -101, -105, -105, -111, -111,
+            -115, -115, -116, -116, -32, -37, -45, -46, -47, -51, -52, -53, -54, -55, -56, -57,
+            -61, -65, -95, -98, -100, -102, -103, -104, -108, -109, -110, -112, -114, -117, 58, 59,
+            60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 77,
+            -32, -32, -37, -37, -45, -45, -46, -46, -47, -47, -51, -51, -52, -52, -53, -53,
+            -54, -54, -55, -55, -56, -56, -57, -57, -61, -61, -65, -65, -95, -95, -98, -98,
+            -100, -100, -102, -102, -103, -103, -104, -104, -108, -108, -109, -109, -110, -110, -112, -112,
+            -114, -114, -117, -117, -58, -66, -67, -68, -69, -70, -71, -72, -73, -74, -75, -76,
+            -77, -78, -79, -80, -81, -82, -83, -84, -85, -86, -87, -89, -106, -107, -113, -118,
+            -119, -120, -121, -122, 76, 75, -44, -59, -38, -42, 260, 78, 257, 79, 255, 80,
+            253, 81, 250, 82, 249, 83, 248, 84, 247, 85, -123, 86, 233, 87, 211, 88,
+            192, 89, 177, 90, 167, 91, 158, 92, 142, 93, 127, 94, 113, 95, 106, 96,
+            103, 97, 102, 98, -249, 99, 101, 100, -22, -256, -10, -13, -127, -220, 105, 104,
+            -30, -31, -28, -29, 110, 107, 109, 108, -26, -27, -24, -25, 112, 111, -21, -23,
+            -19, -20, 121, 114, 118, 115, 117, 116, -17, -18, -15, -16, 120, 119, -12, -14,
+            -8, -11, 125, 122, 124, 123, -6, -7, -4, -5, -254, 126, -2, -3, 135, 128,
+            132, 129, 131, 130, -252, -253, -250, -251, 134, 133, -247, -248, -245, -246, 139, 136,
+            138, 137, -241, -244, -222, -223, 141, 140, -214, -221, -211, -212, 151, 143, 148, 144,
+            147, 145, -255, 146, -203, -204, -242, -243, 150, 149, -238, -240, -218, -219, 155, 152,
+            154, 153, -210, -213, -202, -205, 157, 156, -200, -201, -192, -193, 164, 159, 163, 160,
+            162, 161, -234, -235, -199, -207, -236, -237, 166, 165, -215, -225, -171, -206, 174, 168,
+            172, 169, 171, 170, -148, -159, -144, -145, -239, 173, -9, -142, 176, 175, -197, -231,
+            -188, -191, 185, 178, 182, 179, 181, 180, -182, -183, -175, -180, 184, 183, -168, -174,
+            -165, -166, 189, 186, 188, 187, -157, -158, -152, -155, 191, 190, -150, -151, -147, -149,
+            204, 193, 201, 194, 198, 195, 197, 196, -141, -143, -139, -140, 200, 199, -137, -138,
+            -1, -135, 203, 202, -232, -233, -198, -228, 208, 205, 207, 206, -190, -196, -187, -189,
+            210, 209, -185, -186, -178, -181, 226, 212, 220, 213, 217, 214, 216, 215, -170, -173,
+            -164, -169, 219, 218, -160, -163, -154, -156, 224, 221, 223, 222, -136, -146, -133, -134,
+            -230, 225, -129, -132, 230, 227, 229, 228, -227, -229, -216, -217, 232, 231, -179, -209,
+            -176, -177, 243, 234, 240, 235, 239, 236, 238, 237, -167, -172, -153, -161, -224, -226,
+            242, 241, -184, -194, -131, -162, 246, 244, -208, 245, -128, -130, -92, -195, -60, -96,
+            -94, -125, -93, -126, 252, 251, -64, -91, 0, -36, -124, 254, -35, -62, -63, 256,
+            -39, -43, 259, 258, -40, -41, -33, -34, -88, -90,
+        };
 
-            _root = root;
-        }
-#if DEBUG
-        private static void Dive(HuffmanNode node, Stack<string> stack)
-        {
-            // either both or neither nodes must be set
-            if ((node.False == null) != (node.True == null))
-            {
-                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; mismatched sub-tree (Value={node.Value})");
-            }
-            else if (node.False == null && node.Value < 0)
-            {
-                throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; missing value");
-            }
-            if (node.True != null)
-            {
-                stack.Push("1");
-                Dive(node.True, stack);
-                stack.Pop();
-            }
-            if (node.False != null)
-            {
-                stack.Push("0");
-                Dive(node.False, stack);
-                stack.Pop();
-            }
-        }
-#endif
+        //static readonly HuffmanNode _root;
+        //static HuffmanCode()
+        //{
+        //    var root = new HuffmanNode();
+        //    List<HuffmanNode> allNodes = new List<HuffmanNode>();
+        //    Func<HuffmanNode, HuffmanNode> createNode = parent =>
+        //    {
+        //        var child = new HuffmanNode { Depth = parent.Depth + 1 };
+        //        allNodes.Add(child);
+        //        return child;
+        //    };
+        //    for (int i = 0; i < _codes.Length; i++)
+        //    {
+        //        var code = _codes[i];
+        //        int bit = 1 << ((int)_codeLengths[i] - 1);
+        //        var node = root;
+        //        while (bit != 0)
+        //        {
+        //            if ((code & bit) == 0)
+        //            {
+        //                node = node.False ?? (node.False = createNode(node));
+        //            }
+        //            else
+        //            {
+        //                node = node.True ?? (node.True = createNode(node));
+        //            }
+        //            bit >>= 1;
+        //        }
+        //        node.Value = i;
+        //    }
+
+        //    // check they make sense and set the ids so that
+        //    // they are always incremental as you navigate downwards
+        //    var stack = new Stack<string>();
+        //    int nextId = 1;
+        //    Dive(root, stack, ref nextId);
+
+        //    allNodes.Sort((x, y) =>
+        //    {
+        //        int delta = x.Depth.CompareTo(y.Depth);
+        //        if (delta == 0) delta = x.Id.CompareTo(y.Depth);
+        //        return delta;
+        //    });
+
+        //    // Depth analysis: 10x5, 4x30
+        //    int minLeafDepth = allNodes.Where(x => x.IsLeaf).Min(x => x.Depth),
+        //        maxLeafDepth = allNodes.Where(x => x.IsLeaf).Max(x => x.Depth),
+        //        minLeafCount = allNodes.Count(x => x.IsLeaf && x.Depth == minLeafDepth),
+        //        maxLeafCount = allNodes.Count(x => x.IsLeaf && x.Depth == maxLeafDepth);
+        //    Console.WriteLine($"Depth analysis: {minLeafCount}x{minLeafDepth}, {maxLeafCount}x{maxLeafDepth}");
+
+        //    // min count = 5, so we'll start by short-cutting the first 32 nodes in order
+        //    int nextArrayIndex = 32;
+        //    for (int i = 0; i < 32; i++)
+        //    {
+        //        var node = GetNode(root, i, 0x10);
+        //        node.ArrayIndex = i;
+        //        SetArrayIndexing(node.False, ref nextArrayIndex);
+        //        SetArrayIndexing(node.True, ref nextArrayIndex);
+        //    }
+
+        //    short[] linearized = new short[nextArrayIndex * 2];
+
+        //    foreach (var node in allNodes)
+        //    {
+        //        int index = 2 * node.ArrayIndex;
+        //        if (index >= 0)
+        //        {
+        //            if (node.IsLeaf)
+        //            {
+        //                var val = (short)-node.Value;
+        //                linearized[index] = linearized[index + 1] = val;
+        //            }
+        //            else
+        //            {
+        //                if (node.False.IsLeaf)
+        //                {
+        //                    linearized[index] = (short)-node.False.Value;
+        //                }
+        //                else
+        //                {
+        //                    linearized[index] = (short)node.False.ArrayIndex;
+        //                }
+        //                if (node.True.IsLeaf)
+        //                {
+        //                    linearized[index + 1] = (short)-node.True.Value;
+        //                }
+        //                else
+        //                {
+        //                    linearized[index + 1] = (short)node.True.ArrayIndex;
+        //                }
+        //            }
+        //        }
+        //    }
+
+        //    var sb = new StringBuilder();
+        //    for(int i = 0; i < linearized.Length;i++)
+        //    {
+        //        if (i != 0 && (i % 16) == 0) sb.AppendLine();
+        //        sb.Append(linearized[i]).Append(", ");
+        //    }
+        //    Console.WriteLine(sb.ToString());
+
+        //    var outputs = new string[257];
+        //    for(int i = 0; i < 32; i++)
+        //    {
+        //        string prefix = Convert.ToString(i, 2).PadLeft(5, '0');
+        //        WriteTree(prefix, i, outputs);
+        //    }
+        //    for(int i = 0; i < outputs.Length; i++)
+        //    {
+        //        Console.WriteLine($"[{i}] ({outputs[i]?.Length??-1}): {outputs[i] ?? "(nil)"}");
+        //    }
+
+        //    _root = root;
+        //}
+
+        //private static void WriteTree(string prefix, int index, string[] outputs)
+        //{
+        //    index <<= 1;
+        //    int left = _linearizedTree[index], right = _linearizedTree[index + 1];
+        //    if(left == right)
+        //    {
+        //        outputs[(-left)] = prefix;
+        //    }
+        //    else
+        //    {
+        //        if(left <= 0)
+        //        {
+        //            outputs[-left] = prefix + "0";
+        //        }
+        //        else
+        //        {
+        //            WriteTree(prefix + "0", left, outputs);
+        //        }
+        //        if (right <= 0)
+        //        {
+        //            outputs[-right] = prefix + "1";
+        //        }
+        //        else
+        //        {
+        //            WriteTree(prefix + "1", right, outputs);
+        //        }
+        //    }
+        //}
+
+        //private static void SetArrayIndexing(HuffmanNode node, ref int nextArrayIndex)
+        //{
+        //    if (node != null)
+        //    {
+        //        node.ArrayIndex = nextArrayIndex++;
+        //        if (node.True != null && !node.True.IsLeaf)
+        //        {
+        //            SetArrayIndexing(node.True, ref nextArrayIndex);
+        //        }
+        //        if (node.False != null && !node.False.IsLeaf)
+        //        {
+        //            SetArrayIndexing(node.False, ref nextArrayIndex);
+        //        }
+        //    }
+        //}
+
+        //private static HuffmanNode GetNode(HuffmanNode node, int data, int mask)
+        //{
+        //    while (mask != 0 && node != null)
+        //    {
+        //        node = ((data & mask) == 0) ? node.False : node.True;
+        //        mask >>= 1;
+        //    }
+        //    return node;
+        //}
+
+        //private static void Dive(HuffmanNode node, Stack<string> stack, ref int nextId)
+        //{
+        //    // either both or neither nodes must be set
+        //    if ((node.False == null) != (node.True == null))
+        //    {
+        //        throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; mismatched sub-tree (Value={node.Value})");
+        //    }
+        //    else if (node.False == null && node.Value < 0)
+        //    {
+        //        throw new InvalidOperationException($"The huffman tree for {string.Concat(stack)} is invalid; missing value");
+        //    }
+        //    node.Id = nextId++;
+        //    if (node.True != null)
+        //    {
+        //        stack.Push("1");
+        //        Dive(node.True, stack, ref nextId);
+        //        stack.Pop();
+        //    }
+        //    if (node.False != null)
+        //    {
+        //        stack.Push("0");
+        //        Dive(node.False, stack, ref nextId);
+        //        stack.Pop();
+        //    }
+        //}
+        //
+        //class HuffmanNode
+        //{
+        //    public HuffmanNode True, False;
+        //    public int Value = -1;
+
+        //    public bool IsLeaf => True == null;
+
+        //    public int Depth, Id, ArrayIndex = -1;
+
+        //    public override string ToString()
+        //    {
+        //        return IsLeaf ? $"[{Id}] ({Depth}) = {Value}" : $"[{Id}] ({Depth}) {False?.Id}/{True?.Id}";
+        //    }
+        //}
     }
 }
