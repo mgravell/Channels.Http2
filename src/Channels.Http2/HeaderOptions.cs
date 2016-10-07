@@ -6,7 +6,7 @@ namespace Channels.Http2
     /// Represents the encoding options to use with this header
     /// </summary>
     /// <remarks>
-    /// bits: 0-4 control indexing (8 options, 6 used)
+    /// bits: 0-4 control indexing (16 options, 6 used)
     /// bits: 5-6 control name compression (4 options, 3 used)
     /// bits: 7-8 control value compression (4 options, 3 used)
     /// </remarks>
