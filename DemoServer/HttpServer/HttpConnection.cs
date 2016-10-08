@@ -17,7 +17,8 @@ namespace Channels.Samples.Http
         private static readonly byte[] _http11Bytes = Encoding.UTF8.GetBytes("HTTP/1.1 ");
         private static readonly byte[] _chunkedEndBytes = Encoding.UTF8.GetBytes("0\r\n\r\n");
         private static readonly byte[] _endChunkBytes = Encoding.ASCII.GetBytes("\r\n");
-        private static readonly byte[] _http2SwitchBytes = Encoding.UTF8.GetBytes("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n");
+        private static readonly byte[] _http2SwitchBytes = Encoding.UTF8.GetBytes("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n"),
+            _emptySettingsFrame = { 0, 0, 0, 0x04, 0, 0, 0, 0, 0 };
 
         private readonly IReadableChannel _input;
         private readonly IWritableChannel _output;
@@ -132,7 +133,7 @@ namespace Channels.Samples.Http
                          The first HTTP/2 frame sent by the server MUST be a server connection
                          preface (Section 3.5) consisting of a SETTINGS frame (Section 6.5).
                         */
-                        
+                        _outputFormatter.Write(_emptySettingsFrame);
 
 
                         await _outputFormatter.FlushAsync();
