@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Utf8;
 
@@ -34,13 +35,21 @@ namespace Channels.Http2
         }
 
         public HeaderTable(int maxLength) : this(maxLength ^ DefaultMaxLength, 0, null) { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static int ItemLength(long lengths)
+        {
+            return (int)((lengths & Mask32) + ((lengths >> 32) & Mask32) + 32);
+        }
         private HeaderTable(int xoredMaxLength, int count, IBuffer buffer)
         {
             _maxLength = xoredMaxLength;
             Count = count;
             _buffer = buffer;
         }
-        internal unsafe HeaderTable Add(Header header, IBufferPool pool)
+
+        internal const long Mask32 = 0xFFFFFFFF;
+        internal HeaderTable Add(Header header, IBufferPool pool)
         {
             int newHeaderLength = header.Length;
 
@@ -62,9 +71,9 @@ namespace Channels.Http2
                 var span = _buffer.Data.Span;
                 for (int i = 0; i < Count; i++)
                 {
-                    long lengths64 = span.Slice(bytesToKeep).Read<long>();
-                    int* lengths32 = (int*)&lengths64;
-                    int itemLen = lengths32[0] + lengths32[1] + 32;
+                    long lengths = span.Slice(bytesToKeep).Read<long>();
+
+                    int itemLen = ItemLength(lengths);
                     totalBytes += itemLen;
                     if (totalBytes > MaxLength)
                     {
@@ -82,7 +91,7 @@ namespace Channels.Http2
         internal string GetHeaderName(uint index) => GetHeader(index).Name;
 
 
-        internal unsafe HeaderTable SetMaxLength(int maxLength, IBufferPool pool)
+        internal HeaderTable SetMaxLength(int maxLength, IBufferPool pool)
         {
             if (checked((int)maxLength) == MaxLength) return this;
 
@@ -96,9 +105,8 @@ namespace Channels.Http2
             var span = _buffer.Data.Span;
             for (int i = 0; i < Count; i++)
             {
-                long lengths64 = span.Slice(bytesToKeep).Read<long>();
-                int* lengths32 = (int*)&lengths64;
-                int itemLen = lengths32[0] + lengths32[1] + 32;
+                long lengths = span.Slice(bytesToKeep).Read<long>();
+                int itemLen = ItemLength(lengths);
                 totalBytes += itemLen;
                 if (totalBytes > MaxLength)
                 {
@@ -125,7 +133,7 @@ namespace Channels.Http2
                 ? GetStaticHeader(key)
                 : GetDynamicHeader(key - _staticTableLength);
         }
-        private unsafe Header GetDynamicHeader(uint index)
+        private Header GetDynamicHeader(uint index)
         {
             if (index >= Count)
             {
@@ -133,17 +141,16 @@ namespace Channels.Http2
             }
 
             var span = _buffer.Data.Span;
-            long lengths64 = 0;
-            int* lengths32 = (int*)&lengths64;
+            long lengths;
             while (index-- != 0)
             {
-                lengths64 = span.Read<long>();
-                int itemLen = lengths32[0] + lengths32[1] + 32;
+                lengths = span.Read<long>();
+                int itemLen = ItemLength(lengths);
                 span = span.Slice(itemLen);
             }
 
-            lengths64 = span.Read<long>();
-            int nameLen = lengths32[0], valueLen = lengths32[1];
+            lengths = span.Read<long>();
+            int nameLen = (int)(lengths & Mask32), valueLen = (int)((lengths >> 32) & Mask32);
             return new Header(
                 name: nameLen == 0 ? "" : new Utf8String(span.Slice(32, nameLen)).ToString(),
                 value: valueLen == 0 ? "" : new Utf8String(span.Slice(32 + nameLen, valueLen)).ToString(),
@@ -151,7 +158,7 @@ namespace Channels.Http2
             );
 
         }
-        internal unsafe uint GetKey(string name)
+        internal uint GetKey(string name)
         {
             int staticIndex = Array.IndexOf(_staticHeaderNames, name);
             if (staticIndex >= 0)
@@ -162,20 +169,17 @@ namespace Channels.Http2
             {
                 int nameLength = name.Length, nameHashCode = name.GetHashCode();
                 var span = _buffer.Data.Span;
-                long lengths64 = 0;
-                long hashcodes64 = 0;
-                int* lengths32 = (int*)&lengths64;
-                int* hashcodes32 = (int*)&hashcodes64;
+                long lengths, hashcodes;
                 for (uint i = 0; i < Count; i++)
                 {
-                    lengths64 = span.Read<long>();
+                    lengths = span.Read<long>();
 
-                    int nameLen = lengths32[0];
+                    int nameLen = (int)(lengths & Mask32);
 
                     if (nameLen == nameLength)
                     {
-                        hashcodes64 = span.Slice(8).Read<long>();
-                        if (hashcodes32[0] == nameHashCode
+                        hashcodes = span.Slice(8).Read<long>();
+                        if ((int)(hashcodes & Mask32) == nameHashCode
                             && Equals(span.Slice(32, nameLen), name))
                         {
                             return _staticTableLength + i + 1;
@@ -183,7 +187,7 @@ namespace Channels.Http2
                     }
 
                     // next!
-                    span = span.Slice(nameLen + lengths32[1] + 32);
+                    span = span.Slice(ItemLength(lengths));
                 }
             }
 
@@ -191,7 +195,7 @@ namespace Channels.Http2
             return 0;
         }
 
-        internal unsafe uint GetKey(string name, string value)
+        internal uint GetKey(string name, string value)
         {
             int staticIndex = value.Length == 0 ? -1 : Array.IndexOf(_staticHeaderValues, value);
             if (staticIndex >= 0 && _staticHeaderNames[staticIndex] == name)
@@ -203,19 +207,17 @@ namespace Channels.Http2
                 int nameLength = name.Length, nameHashCode = name.GetHashCode(),
                     valueLength = value.Length, valueHashCode = value.GetHashCode();
                 var span = _buffer.Data.Span;
-                long lengths64 = 0, hashcodes64 = 0;
-                int* lengths32 = (int*)&lengths64;
-                int* hascodes32 = (int*)&hashcodes64;
+                long lengths, hashcodes;
                 for (uint i = 0; i < Count; i++)
                 {
-                    lengths64 = span.Read<long>();
-                    int nameLen = lengths32[0], valueLen = lengths32[1];
+                    lengths = span.Read<long>();
+                    int nameLen = (int)(lengths & Mask32), valueLen = (int)((lengths >> 32) & Mask32);
 
                     if (nameLen == nameLength && valueLen == valueLength)
                     {
-                        hashcodes64 = span.Slice(8).Read<long>();
-                        if (hascodes32[0] == nameHashCode
-                         && hascodes32[1] == valueHashCode
+                        hashcodes = span.Slice(8).Read<long>();
+                        if ((int)(hashcodes & Mask32) == nameHashCode
+                         && (int)((hashcodes >> 32) & Mask32) == valueHashCode
                          && Equals(span.Slice(32, nameLen), name)
                          && Equals(span.Slice(32 + nameLen, valueLen), value))
                         {
@@ -223,7 +225,7 @@ namespace Channels.Http2
                         }
                     }
                     // next!
-                    span = span.Slice(nameLen + lengths32[1] + 32);
+                    span = span.Slice(ItemLength(lengths));
                 }
             }
 

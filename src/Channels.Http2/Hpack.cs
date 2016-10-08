@@ -24,19 +24,22 @@ namespace Channels.Http2
 
         public override string ToString() => $"{Name}: {Value}";
 
-        internal unsafe void WriteTo(Span<byte> span)
+        internal void WriteTo(Span<byte> span)
         {
-            long lengths64 = 0, hashcodes64 = 0;
-            int* lengths32 = (int*)&lengths64;
-            int* hashcodes32 = (int*)&hashcodes64;
-
-            lengths32[0] = Name?.Length ?? 0;
-            lengths32[1] = Value?.Length ?? 0;
-            hashcodes32[0] = Name?.GetHashCode() ?? 0;
-            hashcodes32[1] = Value?.GetHashCode() ?? 0;
-            span.Write(lengths64);
-            span.Slice(8).Write(hashcodes64);
-
+            long lengths = 0, hashcodes = 0;
+            if(Name != null)
+            {
+                lengths = Name.Length & HeaderTable.Mask32;
+                hashcodes = Name.GetHashCode() & HeaderTable.Mask32;
+            }
+            if(Value != null)
+            {
+                lengths |= ((long)Value.Length) << 32;
+                hashcodes |= ((long)Value.GetHashCode()) << 32;
+            }
+            span.Write(lengths);
+            span.Slice(8).Write(hashcodes);
+            
             int offset = 32;
             if(!string.IsNullOrEmpty(Name))
             {
