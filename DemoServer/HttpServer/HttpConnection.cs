@@ -123,6 +123,21 @@ namespace Channels.Samples.Http
 
                 try
                 {
+                    if (!_isHttp2 && RequestHeaders.ContainsKey("Upgrade") && TryUpgradeToHttp2())
+                    {
+                        _outputFormatter.Write(_http2SwitchBytes);
+                        _isHttp2 = true;
+
+                        /*
+                         The first HTTP/2 frame sent by the server MUST be a server connection
+                         preface (Section 3.5) consisting of a SETTINGS frame (Section 6.5).
+                        */
+                        
+
+
+                        await _outputFormatter.FlushAsync();
+                    }
+
                     await _application.ProcessRequestAsync(context);
                 }
                 catch (Exception ex)
@@ -204,19 +219,7 @@ namespace Channels.Samples.Http
             }
 
             HasStarted = true;
-            Console.WriteLine("Upgrade: " + RequestHeaders["Upgrade"]);
-            if (!_isHttp2 && RequestHeaders.ContainsKey("Upgrade") && TryUpgradeToHttp2())
-            {
-                _outputFormatter.Write(_http2SwitchBytes);
-                _isHttp2 = true;
-
-                /*
-                 The first HTTP/2 frame sent by the server MUST be a server connection
-                 preface (Section 3.5) consisting of a SETTINGS frame (Section 6.5).
-                */
-                throw new NotImplementedException();
-            }
-
+            
             if (_isHttp2)
             {
                 throw new NotImplementedException();
@@ -241,7 +244,7 @@ namespace Channels.Samples.Http
                 {
                     var connection = RequestHeaders["Connection"];
                     if (ContainsToken(connection, "Upgrade") && ContainsToken(connection, "HTTP2-Settings")
-                        && ContainsToken(RequestHeaders["Upgrade"], "htc"))
+                        && ContainsToken(RequestHeaders["Upgrade"], "h2c"))
                     {
                         var settings = RequestHeaders["HTTP2-Settings"];
                         if (settings.Count == 1)
@@ -254,6 +257,9 @@ namespace Channels.Samples.Http
                                 case 3: base64 += "="; break;
                                 default: return false;
                             }
+                            // In the URL and Filename safe variant, character 62 (0x3E) is replaced with a "-" (minus sign) and character 63 (0x3F) is replaced with a "_" (underscore).
+                            base64 = base64.Replace('-', '+').Replace('_', '/');
+
                             var payload = Convert.FromBase64String(base64);
                             ParseSettings(payload);
                             return true;
@@ -263,8 +269,9 @@ namespace Channels.Samples.Http
 
                 return false;
             }
-            catch
+            catch(Exception ex)
             {
+                Console.Error.WriteLine(ex.Message);
                 return false;
             }
         }
@@ -287,13 +294,24 @@ namespace Channels.Samples.Http
         {
             foreach (var value in headerValue)
             {
-                if (string.Equals(token, StringComparer.OrdinalIgnoreCase))
+                if (string.Equals(value.Trim(), token, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
+                }
+                if (value.Contains(","))
+                {
+                    foreach(var part in value.Split(comma))
+                    {
+                        if (string.Equals(part.Trim(), token, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
                 }
             }
             return false;
         }
+        static readonly char[] comma = { ',' };
 
         private void WriteEndResponse()
         {
